@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>addToMenu</key>
+	<array>
+		<dict>
+			<key>path</key>
+			<string>activityMonitorPrefs.py</string>
+			<key>preferredName</key>
+			<string>Edit Preferences</string>
+			<key>shortKey</key>
+			<string></string>
+		</dict>
+	</array>
+	<key>developer</key>
+	<string>Type Supply LLC</string>
+	<key>developerURL</key>
+	<string>http://tools.typesupply.com</string>
+	<key>html</key>
+	<false/>
+	<key>launchAtStartUp</key>
+	<integer>1</integer>
+	<key>mainScript</key>
+	<string>activityMonitorMain.py</string>
+	<key>name</key>
+	<string>Activity Monitor</string>
+	<key>timeStamp</key>
+	<real>1408123037.3503079</real>
+	<key>version</key>
+	<string>0.1</string>
+	<key>extensionPath</key>
+	<string>Activity Monitor.roboFontExt</string>
+	<key>com.robofontmechanic.Mechanic</key>
+	<dict>
+	<key>repository</key>
+		<string>typesupply/activity-monitor</string>
+		<key>summary</key>
+		<string>An activity notifier/monitor.</string>
+	</dict>
+</dict>
+</plist>

@@ -1,11 +1,14 @@
 # Activity Monitor
 
-This is an activity monitor for RoboFont. This works by:
+This is an activity monitor for RoboFont. It is intended to be a building block for other tools that need computation time when the user is not actively engaged with RoboFont. The monitor periodically posts `activity` event notifications that contain an info dictionary about the recent activity. Tools can subscribe to these event notifications like so:
 
-1. Getting the time since the most recent interaction by the user with an input method (keyboard, mouse, etc.).
-2. Getting the time since the most recent notification by all open fonts.
+```python
+from mojo.events import addObserver
 
-The monitor periodically posts `activity` event notifications that contain an info about the recent activity. Tools can subscribe to these event notifications with `mojo.events addObserver(observer, "callback", "activity")`. The info dictionary contains the following data:
+addObserver(observer, "callback", "activity")
+```
+
+The info dictionary contains the following data:
 
 | key | description |
 | --- | ----------- |
