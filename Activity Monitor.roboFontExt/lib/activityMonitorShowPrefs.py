@@ -1,0 +1,4 @@
+from mojo.roboFont import OpenWindow
+from activityMonitor import ActivityPollerWindow
+
+OpenWindow(ActivityPollerWindow)
