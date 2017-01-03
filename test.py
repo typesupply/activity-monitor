@@ -8,40 +8,60 @@ from mojo.events import publishEvent
 from mojo.events import addObserver, removeObserver
 from mojo.roboFont import AllFonts
 
+# ---------
+# Debugging
+# ---------
+
+def ClassNameIncrementer(clsName, bases, dct):
+   import objc
+   orgName = clsName
+   counter = 0
+   while 1:
+       try:
+           objc.lookUpClass(clsName)
+       except objc.nosuchclass_error:
+           break
+       counter += 1
+       clsName = orgName + str(counter)
+   return type(clsName, bases, dct)
+
 # --------
 # Defaults
 # --------
 
-fallbackIdleThreshold = 2.0
+fallbackInterval = 2.0
 
-def getDefaultMonitoringState():
+def getDefaultPollingState():
     return True
 
-def setDefaultMonitoringState(value):
+def setDefaultPollingState(value):
     pass
 
-def getDefaultMonitoringThreshold():
-    return fallbackIdleThreshold
+def getDefaultPollingInterval():
+    return fallbackInterval
 
-def setDefaultMonitoringThreshold(value):
+def setDefaultPollingInterval(value):
     pass
 
 # -------
 # Monitor
 # -------
 
-class ActivityMonitor(NSObject):
+class ActivityPoller(NSObject):
+
+    __metaclass__ = ClassNameIncrementer
 
     _timer = None
-    _threshold = fallbackIdleThreshold
+    _interval = getDefaultPollingInterval()
+    _lastPoll = None
 
     def init(self):
-        self = super(ActivityMonitor, self).init()
+        self = super(ActivityPoller, self).init()
         return self
 
     def _startTimer(self):
         self._timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            self._threshold,
+            self._interval,
             self,
             "_timerCallback:",
             None,
@@ -56,54 +76,63 @@ class ActivityMonitor(NSObject):
 
     def _timerCallback_(self, timer):
         idle = False
+        # App activity
         app = NSApp()
         appIsActive = app.isActive()
+        # Font activity
         sinceFontActivity = fontObserver.fontIdleTime()
+        notifications = fontObserver.fontNotifications()
+        # User activity
         sinceUserActivity = None
-        idleTimes = [
-            sinceFontActivity
-        ]
         if appIsActive:
             sinceUserActivity = userIdleTime()
-            idleTimes.append(sinceUserActivity)
-        sinceAnyActivity = min(idleTimes)
+        # Activity since last poll
+        lastPoll = self._lastPoll
+        userActivity = False
+        fontActivity = False
+        now = time.time()
+        self._lastPoll = now
+        if lastPoll is not None:
+            sinceLastPoll = now - lastPoll
+            fontActivity = sinceFontActivity < sinceLastPoll
+            if sinceUserActivity is not None:
+                userActivity = sinceUserActivity < sinceLastPoll
+        # Pose
         info = dict(
             appIsActive=appIsActive,
-            sinceAnyActivity=sinceAnyActivity,
+            userActivity=userActivity,
+            sinceUserActivity=sinceUserActivity,
+            fontActivity=fontActivity,
             sinceFontActivity=sinceFontActivity,
-            sinceUserActivity=sinceUserActivity
+            fontNotifications=notifications
         )
-        if sinceAnyActivity >= self._threshold:
-            self.postIdleEventWithInfo_(info)
-        else:
-            self.postActiveEventWithInfo_(info)
+        self.postEventWithInfo_(info)
+        # Restart
         self._startTimer()
 
-    def monitoring(self):
+    def polling(self):
         return self._timer is not None
 
-    def startMonitoring(self):
+    def startPolling(self):
         fontObserver.startObserving()
         self._startTimer()
 
-    def stopMonitoring(self):
+    def stopPolling(self):
         fontObserver.stopObserving()
         self._stopTimer()
 
-    def setThreshold_(self, value):
-        self._threshold = value
-        if self.monitoring():
-            self.stopMonitoring()
-            self.startMonitoring()
+    def setInterval_(self, value):
+        self._interval = value
+        if self.polling():
+            self.stopPolling()
+            self.startPolling()
 
-    def postIdleEventWithInfo_(self, info):
-        publishEvent("applicationIsIdle", **info)
-
-    def postActiveEventWithInfo_(self, info):
-        publishEvent("applicationIsActive", **info)
+    def postEventWithInfo_(self, info):
+        publishEvent("activity", **info)
 
 
-activityMonitor = ActivityMonitor.alloc().init()
+activityPoller = ActivityPoller.alloc().init()
+
 
 # -------------
 # Font Observer
@@ -112,14 +141,20 @@ activityMonitor = ActivityMonitor.alloc().init()
 class _FontObserver(object):
 
     _lastNotificationTime = None
+    _notifications = []
 
     def fontIdleTime(self):
-        if self._lastNotification is None:
+        if self._lastNotificationTime is None:
             return 0
-        return time.time() - self._lastNotification
+        return time.time() - self._lastNotificationTime
+
+    def fontNotifications(self):
+        old = self._notifications
+        self._notifications = []
+        return old 
 
     def startObserving(self):
-        self._lastNotification = time.time()
+        self._lastNotificationTime = time.time()
         openEvents = [
             "newFontDidOpen",
             "fontDidOpen"
@@ -139,7 +174,7 @@ class _FontObserver(object):
             self._fontDidOpenEventCallback(dict(font=font))
 
     def stopObserving(self):
-        self._lastNotification = None
+        self._lastNotificationTime = None
         openEvents = [
             "newFontDidOpen",
             "fontDidOpen"
@@ -176,7 +211,8 @@ class _FontObserver(object):
     # Font Callbacks
 
     def _fontChangeNotificationCallback(self, notification):
-        self._lastNotification = time.time()
+        self._lastNotificationTime = time.time()
+        self._notifications.append(notification)
 
 
 fontObserver = _FontObserver()
@@ -203,77 +239,167 @@ def userIdleTime():
 # Settings
 # --------
 
-from AppKit import NSColor
+from AppKit import *
 import vanilla
 
-class ActivityMonitorSettingsWindow(object):
+class ActivityPollerWindow(object):
 
     def __init__(self):
-        threshold = str(getDefaultMonitoringThreshold())
-        self.w = vanilla.FloatingWindow((230, 140), "Activity Monitor")
-        self.w.stateIndicator = vanilla.ColorWell((0, 0, -0, 50))
-        self.w.stateIndicator.enable(False)
-        self.w.stateIndicator.getNSColorWell().setBordered_(False)
-        self.w.thresholdTextBox1 = vanilla.TextBox((20, 67, -20, 75), "Poll every")
-        self.w.thresholdEditText = vanilla.EditText((90, 66, 50, 22), threshold, callback=self.thresholdEditTextCallback)
-        self.w.thresholdTextBox2 = vanilla.TextBox((148, 67, -20, 17), "seconds.")
-        self.w.toggleStateButton = vanilla.Button((20, 100, -20, 20), "Stop Monitoring", callback=self.toggleStateButtonCallback)
+        self.pollQueue = []
+        self.pollQueueLength = 100
+
+        # Window
+
+        self.w = vanilla.FloatingWindow((500, 400), "Activity Monitor")
+
+        # Settings
+
+        self.w.intervalTextBox1 = vanilla.TextBox((20, 21, 70, 17), "Poll every")
+        self.w.intervalEditText = vanilla.EditText((90, 20, 50, 22), str(getDefaultPollingInterval()), callback=self.intervalEditTextCallback)
+        self.w.intervalTextBox2 = vanilla.TextBox((148, 21, 62, 17), "seconds.")
+
+        self.w.toggleStateButton = vanilla.Button((-150, 21, -20, 20), "Stop Polling", callback=self.toggleStateButtonCallback)
+
+        # Graph
+
+        self.w.activityGraphImageView = vanilla.ImageView((0, 60, -0, 100))
+
+        # Notifications
+
+        self.w.notificationsList = vanilla.List((0, 160, -0, -60), [])
+
+        # Display Settings
+
+        self.w.pollCountTextBox1 = vanilla.TextBox((20, -41, 98, 17), "Show data for")
+        self.w.pollCountEditText = vanilla.EditText((118, -42, 50, 22), str(self.pollQueueLength), callback=self.pollCountEditTextCallback)
+        self.w.pollCountTextBox2 = vanilla.TextBox((176, -41, 120, 17), "most recent polls.")
+
+        self.w.clearButton = vanilla.Button((-150, -41, -20, 20), "Clear", self.clearButtonCallback)
+
+        # Bootstrapping
+
         self.w.bind("close", self.closeWindowCallback)
         addObserver(
             self,
-            "activeEventCallback",
-            "applicationIsActive"
+            "activityEventCallback",
+            "activity"
         )
-        addObserver(
-            self,
-            "idleEventCallback",
-            "applicationIsIdle"
-        )
-        if getDefaultMonitoringState():
-            self.activeEventCallback(None)
-        else:
+        if not getDefaultPollingState():
             self.toggleStateButtonCallback(self.w.toggleStateButton)
+        self.updateActivityImage()
         self.w.open()
 
     def closeWindowCallback(self, window):
         removeObserver(
             self,
-            "applicationIsActive"
-        )
-        removeObserver(
-            self,
-            "applicationIsIdle"
+            "activity"
         )
 
-    def activeEventCallback(self, info):
-        self.w.stateIndicator.set(NSColor.greenColor())
+    # Settings
 
-    def idleEventCallback(self, info):
-        self.w.stateIndicator.set(NSColor.redColor())
-
-    def thresholdEditTextCallback(self, sender):
+    def intervalEditTextCallback(self, sender):
         value = sender.get()
         try:
             value = float(value)
-            activityMonitor.setThreshold_(value)
-            setDefaultMonitoringThreshold(value)
+            activityPoller.setInterval_(value)
+            setDefaultPollingInterval(value)
         except ValueError:
             pass
 
     def toggleStateButtonCallback(self, sender):
-        if activityMonitor.monitoring():
-            activityMonitor.stopMonitoring()
-            sender.setTitle("Start Monitoring")
-            self.w.stateIndicator.set(NSColor.grayColor())
-            setDefaultMonitoringState(False)
+        if activityPoller.polling():
+            activityPoller.stopPolling()
+            sender.setTitle("Start Polling")
+            setDefaultPollingState(False)
         else:
-            activityMonitor.startMonitoring()
-            sender.setTitle("Stop Monitoring")
-            self.w.stateIndicator.set(NSColor.greenColor())
-            setDefaultMonitoringState(True)
+            activityPoller.startPolling()
+            sender.setTitle("Stop Polling")
+            setDefaultPollingState(True)
+
+    # Visualization
+
+    def activityEventCallback(self, info):
+        self.pollQueue.append(info)
+        if len(self.pollQueue) > self.pollQueueLength:
+            self.pollQueue.pop(0)
+        self.updateActivityImage()
+        self.updateNotificationsList()
+
+    def updateActivityImage(self):
+        w = 500.0
+        h = 100.0
+        maxFontNotifications = 10
+        image = NSImage.alloc().initWithSize_((w, h))
+        image.lockFocus()
+        NSColor.blackColor().set()
+        NSRectFill(((0, 0), (w, h)))
+        xIncrement = w / self.pollQueueLength
+        xIncrementHalf = xIncrement / 2.0
+        yIncrement = h / maxFontNotifications
+        activeColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.2, 0.8, 0.2, 1)
+        idleColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.8, 0, 0, 1)
+        path = NSBezierPath.bezierPath()
+        x = 0
+        for i, poll in enumerate(self.pollQueue):
+            rect = ((x, 0), (xIncrement, h))
+            if poll["userActivity"]:
+                c = activeColor
+            else:
+                c = idleColor
+            c.set()
+            NSRectFill(rect)
+            notifications = len(poll["fontNotifications"])
+            if notifications > maxFontNotifications:
+                notifications = maxFontNotifications
+            y = yIncrement * notifications
+            if i == 0:
+                path.moveToPoint_((x + xIncrementHalf, y))
+            path.lineToPoint_((x + xIncrementHalf, y))
+            x += xIncrement
+        NSColor.colorWithCalibratedRed_green_blue_alpha_(1, 1, 1, 0.8).set()
+        path.setLineWidth_(2)
+        path.stroke()
+        image.unlockFocus()
+        self.w.activityGraphImageView.setImage(imageObject=image)
+
+    def updateNotificationsList(self):
+        contents = []
+        for poll in reversed(self.pollQueue):
+            for notification in reversed(poll["fontNotifications"]):
+                line = " ".join((
+                    notification.name,
+                    str(id(notification.object)),
+                    repr(notification.data)
+                ))
+                contents.append(line)
+        self.w.notificationsList.set(contents)
+
+    def pollCountEditTextCallback(self, sender):
+        value = sender.get()
+        try:
+            value = int(value)
+            restartPolling = activityPoller.polling()
+            self.pollQueueLength = value
+            if restartPolling:
+                activityPoller.stopPolling()
+            self.pollQueue = self.pollQueue[:-self.pollQueueLength]
+            self.updateActivityImage()
+            self.updateNotificationsList()
+            if restartPolling:
+                activityPoller.startPolling()
+        except ValueError:
+            pass
+
+    def clearButtonCallback(self, sender):
+        restartPolling = activityPoller.polling()
+        if restartPolling:
+            activityPoller.stopPolling()
+        self.pollQueue = []
+        if restartPolling:
+            activityPoller.startPolling()
 
 
 if __name__ == "__main__":
-    if getDefaultMonitoringState():
-        activityMonitor.startMonitoring()
-    ActivityMonitorSettingsWindow()
+    if getDefaultPollingState():
+        activityPoller.startPolling()
+    ActivityPollerWindow()
