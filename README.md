@@ -10,6 +10,7 @@ The first test only applies if the application is active. If the application is 
 | key | description |
 | --- | ----------- |
 | appIsActive| Boolean indicating if RoboFont is active. |
+| sinceAnyActivity | Seconds since the last activity. |
 | sinceFontActivity | Seconds since the last font notification. |
 | sinceUserActivity | Seconds since the last user interaction. |
 

@@ -66,12 +66,14 @@ class ActivityMonitor(NSObject):
         if appIsActive:
             sinceUserActivity = userIdleTime()
             idleTimes.append(sinceUserActivity)
+        sinceAnyActivity = min(idleTimes)
         info = dict(
             appIsActive=appIsActive,
+            sinceAnyActivity=sinceAnyActivity,
             sinceFontActivity=sinceFontActivity,
             sinceUserActivity=sinceUserActivity
         )
-        if min(idleTimes) >= self._threshold:
+        if sinceAnyActivity >= self._threshold:
             self.postIdleEventWithInfo_(info)
         else:
             self.postActiveEventWithInfo_(info)
@@ -208,13 +210,13 @@ class ActivityMonitorSettingsWindow(object):
 
     def __init__(self):
         threshold = str(getDefaultMonitoringThreshold())
-        self.w = vanilla.Window((250, 140), "Activity Monitor")
+        self.w = vanilla.FloatingWindow((230, 140), "Activity Monitor")
         self.w.stateIndicator = vanilla.ColorWell((0, 0, -0, 50))
         self.w.stateIndicator.enable(False)
         self.w.stateIndicator.getNSColorWell().setBordered_(False)
-        self.w.thresholdTextBox1 = vanilla.TextBox((20, 67, -20, 17), "Check every")
-        self.w.thresholdEditText = vanilla.EditText((110, 66, 50, 22), threshold, callback=self.thresholdEditTextCallback)
-        self.w.thresholdTextBox2 = vanilla.TextBox((170, 67, -20, 17), "seconds.")
+        self.w.thresholdTextBox1 = vanilla.TextBox((20, 67, -20, 75), "Poll every")
+        self.w.thresholdEditText = vanilla.EditText((90, 66, 50, 22), threshold, callback=self.thresholdEditTextCallback)
+        self.w.thresholdTextBox2 = vanilla.TextBox((148, 67, -20, 17), "seconds.")
         self.w.toggleStateButton = vanilla.Button((20, 100, -20, 20), "Stop Monitoring", callback=self.toggleStateButtonCallback)
         self.w.bind("close", self.closeWindowCallback)
         addObserver(
