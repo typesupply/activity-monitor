@@ -9,11 +9,11 @@ class ActivityPollerWindow(object):
 
     def __init__(self):
         self.pollQueue = []
-        self.pollQueueLength = 100
+        self.pollQueueLength = 500
 
         # Window
 
-        self.w = vanilla.FloatingWindow((500, 400), "Activity Monitor")
+        self.w = vanilla.FloatingWindow((500, 215), "Activity Monitor")
 
         # Settings
 
@@ -26,10 +26,6 @@ class ActivityPollerWindow(object):
         # Graph
 
         self.w.activityGraphImageView = vanilla.ImageView((0, 60, -0, 100))
-
-        # Notifications
-
-        self.w.notificationsList = vanilla.List((0, 160, -0, -60), [])
 
         # Display Settings
 
@@ -86,7 +82,6 @@ class ActivityPollerWindow(object):
         if len(self.pollQueue) > self.pollQueueLength:
             self.pollQueue.pop(0)
         self.updateActivityImage()
-        self.updateNotificationsList()
 
     def updateActivityImage(self):
         w = 500.0
@@ -120,22 +115,10 @@ class ActivityPollerWindow(object):
             path.lineToPoint_((x + xIncrementHalf, y))
             x += xIncrement
         NSColor.colorWithCalibratedRed_green_blue_alpha_(1, 1, 1, 0.8).set()
-        path.setLineWidth_(2)
+        path.setLineWidth_(1)
         path.stroke()
         image.unlockFocus()
         self.w.activityGraphImageView.setImage(imageObject=image)
-
-    def updateNotificationsList(self):
-        contents = []
-        for poll in reversed(self.pollQueue):
-            for notification in reversed(poll["fontNotifications"]):
-                line = " ".join((
-                    notification.name,
-                    str(id(notification.object)),
-                    repr(notification.data)
-                ))
-                contents.append(line)
-        self.w.notificationsList.set(contents)
 
     def pollCountEditTextCallback(self, sender):
         value = sender.get()
@@ -147,7 +130,6 @@ class ActivityPollerWindow(object):
                 activityPoller.stopPolling()
             self.pollQueue = self.pollQueue[:-self.pollQueueLength]
             self.updateActivityImage()
-            self.updateNotificationsList()
             if restartPolling:
                 activityPoller.startPolling()
         except ValueError:
