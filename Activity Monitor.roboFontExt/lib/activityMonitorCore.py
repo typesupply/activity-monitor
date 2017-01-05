@@ -170,7 +170,7 @@ class _FontObserver(object):
         font = info["font"]
         font.removeObserver(
             self,
-            None
+            "Font.Changed"
         )
 
     # Font Callbacks
